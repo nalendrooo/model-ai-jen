@@ -3,8 +3,10 @@ import dotenv from "dotenv"
 import fs from "fs"
 import express from "express"
 import bodyParser from "body-parser"
+import cors from "cors"
 
 const app = express()
+app.use(cors())
 app.use(express.json())
 app.use(bodyParser.json())
 const port = 3826
@@ -15,50 +17,67 @@ const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
 });
 
-app.post ("/analysis", async (req, res) => {
-    const { data } = req.body;
+app.get ("/analysis", async (req, res) => {
+    const token = req.headers.authorization
+    const type = req.query.type
+    const endpoint = process.env.SANDBOX_SOLUTES_SISWA
+    console.log(type)
+    const api = type ? endpoint + "?type=" + type : endpoint + "?type=subject"
 
-    if(!data) {
-        console.log("Data Not Found");
+    if(!token) {
+        console.log("Token Not Found")
         res.status(400).json({
             status: "error",
-            message: "data not found"
+            message: "token not found"
         })
     } else {
+        // console.log("Token Found", token)
+        const data = await getData(token, api);
+        console.log("Data:", data.data);
 
-    console.log("Data:", data);
-    const prompt = `Berikan analisis dari data berikut ${JSON.stringify(data)}
-    Catatan :
-    * Berikan output berupa JSON saja
-    * Jangan lakukan analisa jika tidak ada data
-    **Format Output:**
-    * JSON dengan struktur:
-        data: [
+        const prompt = `Berikan analisis dari data berikut ${JSON.stringify(data)}
+        Catatan :
+        * Berikan output berupa JSON saja
+        **Format Output:**
+        * JSON dengan struktur:
+            data: [
+                {
+                    "name": string, // Nama Ujian
+                    "average_score": number, // Rata-rata nilai dari data yang didapat
+                    "total_questions": number, // Total Soal dari data yang didapat
+                    "analysis": string // Analisa dari data
+                }
+            ],
             {
-                "name": string, // Nama Ujian
-                "average_score": number, // Rata-rata nilai dari data yang didapat
-                "total_questions": number, // Total Soal dari data yang didapat
-                "analysis": string // Analisa dari data
-            }
-        ],
-        {
-            "summary": string // Rangkuman Lengap yang berisi penjelasan lengkap dari analisa setiap jenis ujian dan jangan ada kata "di atas"
-        }`
-
-    const response = await openai.chat.completions.create({
+                "summary": string // Rangkuman Lengap yang berisi penjelasan lengkap dari analisa setiap jenis ujian dan jangan ada kata "di atas"
+                "highest": [
+                        {
+                            "name": string, // Nama Ujian
+                            "score": number // Nilai tertinggi
+                        }
+                ] // Nama Ujian dan Nilai tertinggi dari ujian, tampilkan salah satu aja jika ada yang sama
+                "lowest": [
+                    {
+                        "name": string, // Nama Ujian
+                        "score": number // Nilai terendah
+                    }
+                ] // Nama Ujian dan Nilai terendah dari ujian, tampilkan salah satu aja jika ada yang sama
+            }`
+        
+        const response = await openai.chat.completions.create({
         model: "gpt-4o-mini",
+        // model: "gpt-3.5-turbo",
         messages: [
             { role: "system", content: "You are a helpful assistant." },
             { role: "user", content: prompt }
         ],
-        temperature: 0.5,
-        max_tokens: 3000,
-        top_p: 1,
-        frequency_penalty: 0,
-        presence_penalty: 0,
-    });
+            temperature: 0.5, //For gpt-4o-mini
+            // temperature: 0.7, //For  gpt-3.5-turbo
+            frequency_penalty: 0,
+            presence_penalty: 0,
+        });
 
-    if (response.choices[0].message.content) {
+        if (response.choices[0].message.content) {
         const cleanedResponse = response.choices[0].message.content.replace(/```json|```|\n/g, '').trim();
         console.log("Cleaned Response:", cleanedResponse);
 
@@ -74,79 +93,42 @@ app.post ("/analysis", async (req, res) => {
     
         const data = parsedResponse?.data
         const summary = parsedResponse?.summary
+        const highest = parsedResponse?.highest
+        const lowest = parsedResponse?.lowest
         console.log("Clean Data:", data);
-        res.json({
+        res.status(200).json({
             status: "success",
             message: "successfully to analyse",
             data: data,
-            summary: summary
-        })
+            summary: summary,
+            highest: highest,
+            lowest: lowest
+            })
+        }
     }
-    }
-
-    // console.log("Response API:", response.choices[0].message.content);   
+        
 })
 
-// async function main() {
-//     try {
-//         const data = await getData();
-//         // console.log("Data:", data);
-//         console.log("Menunggu Response...");
+function getData(token, api) {
 
-//         if (!data) {
-//             console.error("Data not found");
-//             return;
-//         }
+    console.log("Endpoint nya : ", api)
+    console.log("Ini token nya : ", token)
 
-//         const prompt = `Berikan analisis dari data berikut ${JSON.stringify(data)}
-//         **Format Output:**
-//         * JSON dengan struktur:
-//             data: [
-//                 {
-//                     "name": string, // Nama Ujian
-//                     "average_score": number, // Rata-rata nilai dari data yang didapat
-//                     "total_questions": number, // Total Soal dari data yang didapat
-//                     "analysis": string // Analisa dari data
-//                 }
-//             ],
-//             {
-//                 "summary": string // Rangkuman Lengap yang berisi penjelasan lengkap dari analisa setiap jenis ujian dan jangan ada kata "di atas"
-//             }`
-
-//         const response = await openai.chat.completions.create({
-//             model: "gpt-4o-mini",
-//             messages: [
-//                 { role: "assistant", content: "Kamu adalah ahli analisis nilai dan memberikan rekomendasi terhadapat hasil analisis dari data yang diberikan, standar nilai yang diharapkan adalah 60" },
-//                 { role: "user", content: prompt},
-//             ]  
-//         })
-
-//         console.log(response.choices[0].message.content);
-//     } catch (error) {
-//         console.error("Error:", error.message);
-//         return main()
-//     } 
-// }
-
-// function getData() {
-//     const endpoint = process.env.SOLUTES_SISWA;
-//     const token = `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MjI1NjIsImVtYWlsIjoicGludGFuaW5nZHlhaGRpYW5AZ21haWwuY29tIiwicm9sZSI6InNpc3dhIiwicm9sZV9pZCI6MSwiZnVsbF9uYW1lIjoic2RpYWxtdXN0NTAxIiwic2Nob29sIjp7ImlkIjoxLCJuYW1lIjoiU01QTiBFUkxBTkdHQSAwMSIsInBlcmlvZGVfaWQiOjF9LCJpYXQiOjE3MzY0NzQ2NTMsImV4cCI6MTgzNjQ3NDY1Mn0.dexjebcsZkU536aqOWQxKGMKvCFgeyHIGWxm-gLCCqw`;
-
-//     return fetch(endpoint, {
-//         method: "GET",
-//         headers: {
-//             "Authorization": `Bearer ${token}`,
-//         },
-//     })
-//         .then((response) => {
-//             if (!response.ok) {
-//                 throw new Error(`HTTP error! status: ${response.status}`);
-//             }
-//             return response.json();
-//         });
-// }
-
-// main();
+    return fetch(api, {
+        method: "GET",
+        headers: {
+            "Authorization": `${token}`,
+            "Accept": "application/json",
+            "Content-Type": "application/json"
+        },
+    })
+        .then((response) => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        });
+}
 
 app.listen(port, () => {
     console.log(`Running on port ${port}`)

@@ -2,6 +2,7 @@
   "type": "module",
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
+    "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "elevenlabs": "^0.18.1",
     "express": "^4.21.1",
